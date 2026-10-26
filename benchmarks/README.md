@@ -130,6 +130,28 @@ multiplicity, progress, empty input, and worker exception/cleanup behavior:
 
 ## Optional cache bypass
 
+Cache reconstruction can cost more than discovery. Separate
+processes measured `addFile` plus `loadGadgetsFor` on this kernel, with default
+instruction count and all gadget types:
+
+| Service mode | Seconds |
+| --- | ---: |
+| Warm cache: reconstruction, sorting, deduplication | 43.62 |
+| Cache disabled: discovery, sorting, deduplication | 4.43 |
+
+Both modes returned 760,282 gadgets before deduplication and 336,216 afterward.
+Order-independent hashes of the full gadget records matched, including duplicate
+multiplicity. These single-run measurements exclude console rendering. The warm
+run explicitly confirmed the `Load gadgets from cache` callback; it did not fall
+back to discovery. The cache reader now uses a local fork context: previously,
+on Python 3.14, attempting to change the already-selected global start method
+could cause a silent cache miss and removal of cache shards.
+
+The full CLI, with stdout discarded, took 10.54 s with `--no-cache` and 46.12 s
+with a verified warm-cache hit. These include output formatting and process
+startup/exit. After fixing the Python 3.14 cache lookup, the default command can
+therefore be slower here than its previous silent fallback to scanning.
+
 Use `--no-cache` to skip both reads and writes, including analysis-triggered writes:
 
 ```sh
@@ -137,4 +159,17 @@ Use `--no-cache` to skip both reads and writes, including analysis-triggered wri
 ```
 
 The API equivalent is `RopperService({'cache': False})`. Existing cache files are
-left alone. Caching remains enabled by default.
+left alone. Caching remains enabled by default; this result is specific to the
+binary, settings, runtime and hardware measured here.
+
+To compare full CLI runs with an isolated cache directory:
+
+```sh
+bench_cache=$(mktemp -d)
+time ROPPER_CACHE="$bench_cache" ./Ropper.py --file vmlinux >/dev/null
+time ROPPER_CACHE="$bench_cache" ./Ropper.py --file vmlinux >/dev/null
+time ROPPER_CACHE="$bench_cache" ./Ropper.py --file vmlinux --no-cache >/dev/null
+```
+
+The first command populates the cache, the second measures a cache hit, and the
+third bypasses it.

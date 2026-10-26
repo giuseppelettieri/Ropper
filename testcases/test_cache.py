@@ -59,3 +59,13 @@ class CacheTests(unittest.TestCase):
             RopperService({'cache': 'false'})
         self.assertTrue(CommandLineOptions(['--file', 'example']).ropper_options['cache'])
         self.assertFalse(CommandLineOptions(['--file', 'example', '--no-cache']).ropper_options['cache'])
+
+    @unittest.skipUnless(hasattr(os, 'fork'), 'requires fork')
+    def test_parallel_cache_read_does_not_change_global_start_method(self):
+        self.populate(1105)
+        self.service._RopperService__saveCache(self.file)
+        with patch('ropper.service.multiprocessing.set_start_method',
+                   side_effect=AssertionError('global start method changed')), \
+             patch('ropper.service.multiprocessing.cpu_count', return_value=2):
+            loaded = self.service._RopperService__loadCache(self.file)
+        self.assertEqual(sorted(map(repr, loaded)), sorted(map(repr, self.file.allGadgets)))

@@ -405,8 +405,6 @@ class RopperService(object):
         single = False
         cache_file = None
         try:
-            if multiprocessing.get_start_method() != 'fork':
-                multiprocessing.set_start_method('fork')
             temp = RopperService.CACHE_FOLDER
             cache_file = temp + os.path.sep + self.__getCacheFileName(file)
 
@@ -444,13 +442,14 @@ class RopperService(object):
             else:
                 count = min(multiprocessing.cpu_count(),RopperService.CACHE_FILE_COUNT)
 
-                gqueue = multiprocessing.Queue()
-                fqueue = multiprocessing.JoinableQueue()
+                context = multiprocessing.get_context('fork')
+                gqueue = context.Queue()
+                fqueue = context.JoinableQueue()
                 for i in range(1,RopperService.CACHE_FILE_COUNT+1):
                     fqueue.put(cache_file+'_%d' % i)
                 all_gadgets = []
                 for i in range(count):
-                    p=multiprocessing.Process(target=self.__loadCachePerProcess, args=(fqueue, gqueue))
+                    p=context.Process(target=self.__loadCachePerProcess, args=(fqueue, gqueue))
                     p.start()
                     processes.append(p)
 
