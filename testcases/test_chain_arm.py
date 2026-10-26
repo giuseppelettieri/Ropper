@@ -32,7 +32,9 @@ class ARMExecveChain(unittest.TestCase):
         chain = _generate('ARM', {'cmd': '/bin/sh'})
         self.assertIn("p = lambda x : pack('<I', x)", chain)
         self.assertIn('IMAGE_BASE_0', chain)
-        self.assertIn('print(rop)', chain)
+        self.assertIn('sys.stdout.buffer.write(rop)', chain)
+        self.assertIn('#!/usr/bin/env python3', chain)
+        compile(chain, '<generated-arm-chain>', 'exec')
 
     def test_chain_uses_explicit_address(self):
         # When `address=` is given, the chain must not attempt to write the

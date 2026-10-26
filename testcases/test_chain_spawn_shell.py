@@ -2,6 +2,10 @@
 # Tests for the ret2libc spawn_shell (system('/bin/sh')) ropchain generator
 # across x86, x86_64 and ARM.
 import re
+import os
+import subprocess
+import sys
+import tempfile
 import unittest
 
 from ropper.service import RopperService
@@ -101,10 +105,24 @@ class SpawnShellCommon(unittest.TestCase):
 
     def test_emits_runnable_skeleton(self):
         for arch in _BINARIES:
-            chain = _generate(arch)
+            chain = _generate(arch, {'address': '0x41414141', 'string': '0x42424242'})
             self.assertIn('from struct import pack', chain, arch)
-            self.assertIn("rop = ''", chain, arch)
-            self.assertIn('print(rop)', chain, arch)
+            self.assertIn("rop = b''", chain, arch)
+            self.assertIn('sys.stdout.buffer.write(rop)', chain, arch)
+            self.assertIn('#!/usr/bin/env python3', chain, arch)
+            compile(chain, '<generated-%s-chain>' % arch, 'exec')
+            with tempfile.NamedTemporaryFile('w', suffix='.py', delete=False) as script:
+                script.write(chain)
+                script_path = script.name
+            try:
+                result = subprocess.run([sys.executable, script_path],
+                                        stdout=subprocess.PIPE,
+                                        stderr=subprocess.PIPE, check=True,
+                                        timeout=5)
+            finally:
+                os.unlink(script_path)
+            self.assertGreater(len(result.stdout), 0, arch)
+            self.assertEqual(result.stderr, b'', arch)
 
     def test_supplied_addresses_are_used_verbatim_not_rebased(self):
         # address= (libc system) and string= (&"/bin/sh") are absolute runtime
