@@ -1229,10 +1229,24 @@ class ConsolePrinter(object):
             self.printInfo(message)
 
     def printProgress(self, message, progress):
+        now = time.monotonic()
+
+        # Keep independent progress state for each operation.
+        if message != getattr(self, '_progress_message', None):
+            self._progress_message = message
+            self._progress_time = 0.0
+
+        # Always report completion; otherwise limit to 10 Hz.
+        if progress < 1.0 and now - self._progress_time < 0.1:
+            return
+
+        self._progress_time = now
         self.putsErr(cstr('\r') + cstr('[LOAD]', Color.GREEN),
                      message, cstr(int(progress * 100)) + cstr('%'))
 
     def finishProgress(self, message=None):
+        self._progress_message = None
+        self._progress_time = 0.0
         self.printlnErr('')
         if message:
             self.printInfo(message)
