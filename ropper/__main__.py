@@ -29,11 +29,41 @@
 import ropper
 import sys
 import re
+import multiprocessing
+import os
+
+
+def _fast_exit():
+    """Finish CLI-owned work, then let the OS reclaim the gadget graph."""
+    processes = multiprocessing.active_children()
+    for process in processes:
+        process.terminate()
+    for process in processes:
+        process.join(timeout=1.0)
+        if process.is_alive():
+            # Retain normal multiprocessing shutdown if a worker cannot stop.
+            raise SystemExit(0)
+
+    status = 0
+    for stream in (sys.stdout, sys.stderr):
+        if stream is not None:
+            try:
+                stream.flush()
+            except OSError:
+                status = 1
+    os._exit(status)
 
 def main():
     if re.search('__main__.pyc?$', sys.argv[0]):
         sys.argv[0] = 'python -m ropper'
-    ropper.start(sys.argv[1:])
+    try:
+        ropper.start(sys.argv[1:])
+    except SystemExit as error:
+        if error.code not in (None, 0):
+            raise
+    # Only the standalone entry points take this path. ropper.start() and
+    # Console retain normal Python shutdown behavior for embedded callers.
+    _fast_exit()
 
 if __name__ == '__main__':
     main()

@@ -21,5 +21,7 @@
 import sys
 sys.path.append("filebytes")
 
-import ropper
-ropper.start(sys.argv[1:])
+from ropper.__main__ import main
+
+if __name__ == '__main__':
+    main()

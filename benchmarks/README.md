@@ -173,3 +173,32 @@ time ROPPER_CACHE="$bench_cache" ./Ropper.py --file vmlinux --no-cache >/dev/nul
 
 The first command populates the cache, the second measures a cache hit, and the
 third bypasses it.
+
+## Standalone CLI shutdown
+
+After loading `vmlinux` with caching disabled, ordinary interpreter shutdown spent
+about 1.97 s in its final cyclic garbage collection, collecting roughly 2.3 million
+objects. The console/service callback cycle retained the loaded gadget graph.
+There were no active child processes and only the main thread at `quit`.
+
+The standalone entry points (`Ropper.py`, `python -m ropper`, and the installed
+`ropper` command) now stop and join any active multiprocessing workers, flush
+stdout/stderr, and use `os._exit` after successful completion. This lets the OS
+reclaim memory without traversing the gadget graph. It applies to both interactive
+quit/EOF and successful noninteractive commands. If a worker does not stop within
+the join timeout, shutdown falls back to normal Python cleanup. Nonzero
+`SystemExit` statuses and uncaught exceptions keep normal shutdown behavior.
+
+Measured from entry into `do_quit` until a parent process observed termination:
+
+| Exit path | Seconds |
+| --- | ---: |
+| Normal Python shutdown | 2.03 |
+| Standalone fast exit | 0.095 |
+
+These are single-run measurements. Fast exit intentionally skips destructors,
+`finally` blocks still active at the exit point, and `atexit` handlers. It is
+restricted to CLI entry points; `ropper.start()` and `Console` retain normal
+`SystemExit` behavior for embedding applications. Subprocess tests cover all three
+entry points, quit and EOF, buffered output, embedded use, error exit statuses,
+and worker termination/reaping; a separate test covers the fallback path.

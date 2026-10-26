@@ -7,6 +7,7 @@ from testcases.test_mips import *
 from testcases.test_ppc import *
 from testcases.test_parallel_scan import *
 from testcases.test_cache import *
+from testcases.test_cli_exit import *
 import unittest
 
 unittest.main()
