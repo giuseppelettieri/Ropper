@@ -94,7 +94,7 @@ Usage
                  [--search <regex>] [--quality <quality>] [--opcode <opcode>]
                  [--instructions <instructions>] [--type <type>] [--detailed]
                  [--all] [--cfg-only] [--chain <generator>] [-b <badbytes>]
-                 [--nocolor] [--clear-cache] [--no-load] [--analyse <quality>]
+                 [--nocolor] [--clear-cache] [--no-cache] [--no-load] [--analyse <quality>]
                  [--semantic constraint]
                  [--count-of-findings <count of gadgets>] [--single]
 
@@ -184,6 +184,7 @@ Usage
                             Set bytes which should not be contained in gadgets
       --nocolor             Disables colored output
       --clear-cache         Clears the cache
+      --no-cache            Disables reading and writing the gadget cache
       --no-load             Don't load the gadgets automatically when starting the
                             console (--console)
       --analyse <quality>   just used for the implementation of semantic search

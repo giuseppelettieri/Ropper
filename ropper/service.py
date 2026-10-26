@@ -190,6 +190,12 @@ class Options(object):
         elif color == None:
             options['color'] = False
 
+        cache = options.get('cache')
+        if cache is not None and not isinstance(cache, bool):
+            raise TypeError('cache has to be an instance of bool')
+        elif cache is None:
+            options['cache'] = True
+
         badbytes = options.get('badbytes')
         if badbytes and not isinstance(badbytes, str):
             raise TypeError('badbytes has to be an instance of str')
@@ -335,6 +341,8 @@ class RopperService(object):
         return "%s_%s_%d_%s_%d" % (file.loader.checksum, str(file.arch), self.options.inst_count,str(self.options.type), sys.version_info.major)
 
     def __saveCache(self, file):
+        if not self.options.cache:
+            return
         if self.__callbacks and hasattr(self.__callbacks, '__message__'):
             self.__callbacks.__message__('Saving gadgets to cache...')
         cache_file = None
@@ -389,6 +397,8 @@ class RopperService(object):
 
 
     def __loadCache(self, file):
+        if not self.options.cache:
+            return
         mp = False
         nan= 0
         processes = []

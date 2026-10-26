@@ -154,6 +154,8 @@ available rop chain generators:
         parser.add_argument(
             '--clear-cache', help='Clears the cache', action='store_true')
         parser.add_argument(
+            '--no-cache', help='Disables reading and writing the gadget cache', action='store_true')
+        parser.add_argument(
             '--no-load', help='Don\'t load the gadgets automatically when starting the console (--console)', action='store_true', default=False)
         parser.add_argument(
             '--analyse', help='just used for the implementation of semantic search', metavar='<quality>')
@@ -195,6 +197,7 @@ available rop chain generators:
         ropper_options['cfg_only'] = self.__args.cfg_only
         ropper_options['count_of_findings'] = self.__args.count_of_findings
         ropper_options['multiprocessing'] = not self.__args.single
+        ropper_options['cache'] = not self.__args.no_cache
         self.ropper_options = ropper_options
 
 

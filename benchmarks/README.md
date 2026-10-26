@@ -127,3 +127,14 @@ Validation includes the existing suite plus batch-boundary equivalence on x86-64
 ARM, Thumb, ARM64, MIPS and PPC, overlapping and misaligned matches, output
 multiplicity, progress, empty input, and worker exception/cleanup behavior:
 35 tests pass.
+
+## Optional cache bypass
+
+Use `--no-cache` to skip both reads and writes, including analysis-triggered writes:
+
+```sh
+./Ropper.py --file vmlinux --no-cache >/dev/null
+```
+
+The API equivalent is `RopperService({'cache': False})`. Existing cache files are
+left alone. Caching remains enabled by default.
