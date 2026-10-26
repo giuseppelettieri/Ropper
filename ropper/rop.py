@@ -309,19 +309,19 @@ class Ropper(object):
         vaddrs = set()
         for ending in arch.endings[gtype]:
             offset_tmp = 0
-            tmp_code = code[:]
+            pattern = re.compile(ending[0])
 
-            match = re.search(ending[0], tmp_code)
+            match = pattern.search(code, offset_tmp)
             while match:
-                offset_tmp += match.start()
-                index = match.start()
+                index = match.start() - offset_tmp
+                offset_tmp = match.start()
 
                 if offset_tmp % arch.align == 0:
                     #for x in range(arch.align, (depth + 1) * arch.align, arch.align): # This can be used if you want to use a bytecount instead of an instruction count per gadget
                     none_count = 0
 
                     for x in range(0, index+1, arch.align):
-                        code_part = tmp_code[index - x:index + ending[1]]
+                        code_part = code[offset_tmp - x:offset_tmp + ending[1]]
                         gadget, leng = self.__createGadget(arch, code_part, offset + offset_tmp - x, ending,binary.checksum, section.name)
                         if gadget:
                             if leng > instruction_count:
@@ -336,13 +336,14 @@ class Ropper(object):
                             if none_count == arch.maxInvalid:
                                 break
 
-                tmp_code = tmp_code[index+arch.align:]
+                # Keep the segment intact: slicing its remaining suffix for every
+                # ending copies a quadratic amount of data on large binaries.
                 offset_tmp += arch.align
 
-                match = re.search(ending[0], tmp_code)
+                match = pattern.search(code, offset_tmp)
 
                 if self.__callback:
-                    progress = arch.endings[gtype].index(ending) * len(code) + len(code) - len(tmp_code)
+                    progress = arch.endings[gtype].index(ending) * len(code) + min(offset_tmp, len(code))
                     self.__callback(section, toReturn, float(progress) / max_progress)
 
         if self.__callback:
@@ -419,22 +420,24 @@ class Ropper(object):
         vaddrs = set()
         offset_tmp = 0
 
-        tmp_code = code[:]
+        pattern = re.compile(ending[0])
         to_return = []
-        match = re.search(ending[0], tmp_code)
+        match = pattern.search(code, offset_tmp)
 
         while match:
-            offset_tmp += match.start()
-            index = match.start()
+            index = match.start() - offset_tmp
+            offset_tmp = match.start()
 
             if offset_tmp % arch.align == 0:
                 #for x in range(arch.align, (depth + 1) * arch.align, arch.align): # This can be used if you want to use a bytecount instead of an instruction count per gadget
                 none_count = 0
 
                 for x in range(0, index+1, arch.align):
-                    start = index - x
-                    end = index + ending[1] + arch.align if (arch.hasBranchDelaySlot and index + ending[1] + arch.align < len(tmp_code)) else index + ending[1]
-                    code_part = tmp_code[start:end]
+                    start = offset_tmp - x
+                    end = offset_tmp + ending[1]
+                    if arch.hasBranchDelaySlot and end + arch.align < len(code):
+                        end += arch.align
+                    code_part = code[start:end]
                     gadget, leng = self.__createGadget(arch, code_part, offset + offset_tmp - x , ending, fileName, sectionName)
                     if gadget:
                         if leng > instruction_count:
@@ -447,10 +450,10 @@ class Ropper(object):
                         if none_count == arch.maxInvalid:
                             break
 
-            tmp_code = tmp_code[index+arch.align:]
+            # Advance within the original buffer instead of copying its suffix.
             offset_tmp += arch.align
 
-            match = re.search(ending[0], tmp_code)
+            match = pattern.search(code, offset_tmp)
 
         return to_return
 
