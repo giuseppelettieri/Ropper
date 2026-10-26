@@ -30,7 +30,7 @@ from ropper.common.utils import *
 from ropper.common.error import *
 from ropper.common.enum import Enum
 from ropper.arch import x86
-from multiprocessing import Process, Pool, Queue, cpu_count, current_process, JoinableQueue
+from multiprocessing import Process, Queue, cpu_count
 from .gadget import Gadget, GadgetType
 from binascii import hexlify, unhexlify
 from struct import pack
@@ -351,80 +351,112 @@ class Ropper(object):
 
         return toReturn
 
-    def _searchGadgetsForked(self, section, binary, instruction_count=5, gtype=GadgetType.ALL):
+    def _gadgetSearchTasks(self, code, arch, gtype, batch_size=512):
+        """Partition ending matches without changing their backward-search bounds.
 
+        Workers inherit the complete code buffer through fork. Each task owns
+        a disjoint range of matches, but can read preceding bytes and delay slots
+        directly from that buffer, without copying or guessing an overlap size.
+        """
+        for ending in arch.endings[gtype]:
+            pattern = re.compile(ending[0])
+            search_start = position = count = 0
+            match = pattern.search(code, position)
+            while match:
+                position = match.start() + arch.align
+                count += 1
+                if count == batch_size:
+                    yield ending, search_start, position
+                    search_start = position
+                    count = 0
+                match = pattern.search(code, position)
+            if count:
+                yield ending, search_start, position
+
+    def _searchGadgetsForked(self, section, binary, instruction_count=5, gtype=GadgetType.ALL):
         to_return = []
         code = bytes(bytearray(section.bytes))
-
-        processes = []
         arch = binary.arch
+        tasks = list(self._gadgetSearchTasks(code, arch, gtype))
+        if not tasks:
+            if self.__callback:
+                self.__callback(section, to_return, 1.0)
+            return to_return
 
-        max_progress = len(code) * len(arch.endings[gtype])
+        process_count = min(cpu_count(), len(tasks))
+        ending_queue = Queue()
+        # Bound outstanding results so workers cannot queue an entire section's
+        # gadget objects while the parent is still deserializing earlier batches.
+        gadget_queue = Queue(maxsize=process_count * 2)
+        processes = []
+        offset = section.virtualAddress - binary.originalImageBase
 
-        ending_queue = JoinableQueue()
-        gadget_queue = Queue()
-        tmp_code = code[:]
+        try:
+            # Start workers before putting tasks: Queue.put starts a feeder
+            # thread, and we should avoid forking after starting that thread.
+            for cpu in range(process_count):
+                process = Process(target=self.__gatherGadgetsByEndings,
+                    args=(code, arch, binary.checksum, section.name, offset,
+                          ending_queue, gadget_queue, instruction_count),
+                    name="GadgetSearch%d" % cpu)
+                process.daemon = True
+                process.start()
+                processes.append(process)
 
-        process_count = min(cpu_count()+1, len(arch.endings[gtype]))
-        for ending in arch.endings[gtype]:
-            ending_queue.put(ending)
+            for task in tasks:
+                ending_queue.put(task)
+            for _ in processes:
+                ending_queue.put(None)
 
-        for cpu in range(process_count):
-            ending_queue.put(None)
-
-        # TODO: Another solution should be used here. This is a hack for compatibility reasons. to resolve the gadget address calculation of segments of elf files have a different base address if calculated segment.virtualAddress - segment.offset 
-        offset = section.offset - (binary.originalImageBase - (section.virtualAddress - section.offset))
-
-        for cpu in range(process_count):
-            processes.append(Process(target=self.__gatherGadgetsByEndings, args=(tmp_code, arch, binary.checksum, section.name, offset, ending_queue, gadget_queue, instruction_count), name="GadgetSearch%d"%cpu))
-            processes[cpu].daemon=True
-            processes[cpu].start()
-
-
-
-        count = 0
-        ending_count = 0
-        if self.__callback:
-            self.__callback(section, to_return, 0)
-        while ending_count < len(arch.endings[gtype]):
-            gadgets = gadget_queue.get()
-            if gadgets != None:
+            if self.__callback:
+                self.__callback(section, to_return, 0)
+            for completed in range(1, len(tasks) + 1):
+                gadgets, error = gadget_queue.get()
+                if error is not None:
+                    raise RopperError(error)
                 to_return.extend(gadgets)
-
-                ending_count += 1
                 if self.__callback:
-                    self.__callback(section, to_return, float(ending_count) / len(arch.endings[gtype]))
+                    self.__callback(section, to_return, float(completed) / len(tasks))
+
+            for process in processes:
+                process.join()
+        finally:
+            for process in processes:
+                if process.is_alive():
+                    process.terminate()
+                process.join()
+            ending_queue.cancel_join_thread()
+            ending_queue.close()
+            gadget_queue.close()
 
         return to_return
 
-    def __gatherGadgetsByEndings(self,code, arch, fileName, sectionName, offset, ending_queue, gadget_queue, instruction_count):
-
-        #try:
+    def __gatherGadgetsByEndings(self, code, arch, fileName, sectionName, offset,
+                                ending_queue, gadget_queue, instruction_count):
         while True:
-            ending = ending_queue.get()
-            if ending is None:
-                ending_queue.task_done()
+            task = ending_queue.get()
+            if task is None:
                 break
+            ending, search_start, search_end = task
+            try:
+                gadgets = self.__gatherGadgetsByEnding(
+                    code, arch, fileName, sectionName, offset, ending,
+                    instruction_count, search_start, search_end)
+            except Exception as error:
+                gadget_queue.put((None, str(error)))
+                break
+            gadget_queue.put((gadgets, None))
 
-            gadgets = self.__gatherGadgetsByEnding(code, arch, fileName, sectionName, offset, ending, instruction_count)
-
-            gadget_queue.put(gadgets)
-            ending_queue.task_done()
-
-
-        #except BaseException as e:
-        #    raise RopperError(e)
-
-
-    def __gatherGadgetsByEnding(self, code, arch, fileName, sectionName, offset, ending, instruction_count):
-        vaddrs = set()
-        offset_tmp = 0
+    def __gatherGadgetsByEnding(self, code, arch, fileName, sectionName, offset,
+                               ending, instruction_count, search_start=0,
+                               search_end=None):
+        offset_tmp = search_start
 
         pattern = re.compile(ending[0])
         to_return = []
         match = pattern.search(code, offset_tmp)
 
-        while match:
+        while match and (search_end is None or match.start() < search_end):
             index = match.start() - offset_tmp
             offset_tmp = match.start()
 

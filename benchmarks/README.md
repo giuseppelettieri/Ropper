@@ -80,3 +80,50 @@ API deliberately bypasses cache, sorting, filtering, and multiprocessing.
 For immediate scope reduction, `--type rop` excludes JOP/SYS patterns and a lower
 `--inst-count` reduces decoding work, but both change which gadgets are returned.
 The copying fix preserves existing results without requiring those tradeoffs.
+
+## Balanced worker scheduling
+
+A subsequent change replaces one task per ending pattern with batches of at most
+512 matches. On this machine (20 available CPUs), the original scheduling reached
+92.59% when 25 of 27 patterns had returned, leaving the expensive `ret` patterns
+to finish on individual workers. Progress now counts completed batches; it is
+still a work counter, not an estimate of remaining wall-clock time.
+
+Workers inherit the complete segment buffer through fork. Tasks contain an ending
+pattern and its search-position bounds, including the previous match's boundary.
+This gives each task exclusive ownership of its matches while retaining all
+backward-decoding context and forward branch-delay bytes. No fixed overlap bound,
+segment copies per task, or extra deduplication are needed. This also preserves
+multiplicity when `--all` is used. Results are transferred in bounded batches,
+and workers are joined on completion or terminated on failure.
+
+Fresh measurements without cProfile, comparing the suffix-copy fix alone with
+balanced scheduling:
+
+| Measurement | One task per pattern | Batches of 512 matches |
+| --- | ---: | ---: |
+| First LOAD scan, 718,622 gadgets | 12.70 s | 3.29 s |
+| Second LOAD scan, 41,660 gadgets | 0.75 s | 0.34 s |
+| CLI `--file vmlinux`, stdout discarded, fresh cache | 27.05 s | 17.45 s |
+
+Both segments' complete output hashes match, including gadget addresses, bytes,
+instruction text, and multiplicity, independent of worker arrival order. These
+are single-run measurements; they are separate from the earlier profiled timings.
+The CLI includes sorting, cache writing, filtering, and output formatting, so its
+speedup is smaller than discovery alone. Warm-cache reads do not use this scanner.
+
+Run the parallel scanner benchmark with:
+
+```sh
+PYTHONPATH=.:filebytes python benchmarks/scan_parallel.py vmlinux
+```
+
+For CLI comparisons, use a fresh `ROPPER_CACHE` directory for each invocation to
+force discovery rather than a cache hit. Keep the same benchmark script when
+comparing revisions. `scan_parallel.py` deliberately calls the internal parallel
+scanner and bypasses cache and post-processing.
+
+Validation includes the existing suite plus batch-boundary equivalence on x86-64,
+ARM, Thumb, ARM64, MIPS and PPC, overlapping and misaligned matches, output
+multiplicity, progress, empty input, and worker exception/cleanup behavior:
+35 tests pass.
