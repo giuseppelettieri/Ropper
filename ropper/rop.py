@@ -34,6 +34,7 @@ from multiprocessing import Process, Queue, cpu_count
 from .gadget import Gadget, GadgetType
 from binascii import hexlify, unhexlify
 from struct import pack
+from operator import attrgetter
 import re
 import multiprocessing as mp
 import struct
@@ -295,7 +296,7 @@ class Ropper(object):
 
         if self.__message_callback:
             self.__message_callback('Sorting gadgets...')
-        return sorted(gadgets, key=Gadget.simpleInstructionString)
+        return sorted(gadgets, key=attrgetter('_gadget'))
 
     def _searchGadgetsSingle(self, section, binary, instruction_count=5, gtype=GadgetType.ALL):
 

@@ -39,6 +39,7 @@ from binascii import unhexlify
 from codecs import encode, decode
 from ropper.semantic import Analyser, SemanticInformation
 import tempfile
+from operator import attrgetter
 import re
 import os
 import multiprocessing
@@ -454,7 +455,7 @@ class RopperService(object):
 
                 if self.__callbacks and hasattr(self.__callbacks, '__message__'):
                     self.__callbacks.__message__('Sorting gadgets...')
-                return sorted(all_gadgets, key=Gadget.simpleInstructionString)
+                return sorted(all_gadgets, key=attrgetter('_gadget'))
         except KeyboardInterrupt:
             if mp:
                 for p in processes:
