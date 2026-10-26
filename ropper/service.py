@@ -277,10 +277,9 @@ class RopperService(object):
     def __init__(self, options={}, callbacks=None):
         super(RopperService, self).__init__()
         self.__options = Options(options, self.__optionChanged)
-        if callbacks and hasattr(callbacks, '__gadgetSearchProgress__'):
-            self.__ropper = Ropper(callback=callbacks.__gadgetSearchProgress__)
-        else:
-            self.__ropper = Ropper()
+        self.__ropper = Ropper(
+            callback=getattr(callbacks, '__gadgetSearchProgress__', None),
+            message_callback=getattr(callbacks, '__message__', None))
         self.__files = []
         self.__callbacks = callbacks
         if self.__options.color:
@@ -335,6 +334,8 @@ class RopperService(object):
         return "%s_%s_%d_%s_%d" % (file.loader.checksum, str(file.arch), self.options.inst_count,str(self.options.type), sys.version_info.major)
 
     def __saveCache(self, file):
+        if self.__callbacks and hasattr(self.__callbacks, '__message__'):
+            self.__callbacks.__message__('Saving gadgets to cache...')
         cache_file = None
         try:
             temp = RopperService.CACHE_FOLDER
@@ -451,6 +452,8 @@ class RopperService(object):
                     if self.__callbacks and hasattr(self.__callbacks, '__gadgetSearchProgress__'):
                         self.__callbacks.__gadgetSearchProgress__(None, all_gadgets, float(i+1)/RopperService.CACHE_FILE_COUNT)
 
+                if self.__callbacks and hasattr(self.__callbacks, '__message__'):
+                    self.__callbacks.__message__('Sorting gadgets...')
                 return sorted(all_gadgets, key=Gadget.simpleInstructionString)
         except KeyboardInterrupt:
             if mp:

@@ -52,13 +52,14 @@ class Format(Enum):
 
 class Ropper(object):
 
-    def __init__(self, callback=None):
+    def __init__(self, callback=None, message_callback=None):
         """
         callback function signature:
         def callback(section, gadgets, progress)
         """
         super(Ropper, self).__init__()
         self.__callback = callback
+        self.__message_callback = message_callback
         self.__cs = None
 
 
@@ -292,6 +293,8 @@ class Ropper(object):
 
             gadgets.extend(newGadgets)
 
+        if self.__message_callback:
+            self.__message_callback('Sorting gadgets...')
         return sorted(gadgets, key=Gadget.simpleInstructionString)
 
     def _searchGadgetsSingle(self, section, binary, instruction_count=5, gtype=GadgetType.ALL):
