@@ -403,7 +403,7 @@ class Console(cmd.Cmd):
         strings = self.__rs.searchString(
             string=string, name=self.currentFileName)
         strings = [s for s in strings.values()][0]
-        strings = [(cstr(toHex(addr), Color.RED), cstr(s))
+        strings = [(cstr(toHex(addr, self.currentFile.arch.addressLength), Color.RED), cstr(s))
                    for addr, s in strings]
         printTable('Strings', (cstr('Address'), cstr('Value')), strings)
 
